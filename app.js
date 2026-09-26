@@ -153,6 +153,16 @@ function save() {
 
 function openModal() {
   document.getElementById("modal").classList.remove("hidden");
+  
+  if (currentAppMode === "routines") {
+    document.getElementById("repeat").value = "daily";
+  } else {
+    document.getElementById("repeat").value = "none";
+    if (currentView === "today") {
+      document.getElementById("date").value = new Date().toLocaleDateString('en-CA');
+    }
+  }
+
   setTimeout(() => document.getElementById("title").focus(), 100);
 }
 
