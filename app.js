@@ -3,6 +3,10 @@ let currentAppMode = "everything";
 let currentView = "all";
 let currentCategory = null;
 
+function isDaily(task) {
+  return String(task && task.repeat || "").toLowerCase().trim() === "daily";
+}
+
 const todayStr = new Date().toLocaleDateString('en-CA');
 
 // Initialize history arrays if missing, and reset daily recurring tasks if it's a new day
@@ -16,7 +20,7 @@ tasks.forEach(t => {
     tasksChanged = true;
   }
 
-  if (t.repeat === 'daily') {
+  if (isDaily(t)) {
     // If completed on a past day but not today, reset checkbox
     if (t.completed && !t.history.includes(todayStr)) {
       t.completed = false;
@@ -117,6 +121,11 @@ window.switchMode = function(mode) {
   }
   
   currentCategory = null;
+
+  if (!document.getElementById("modal").classList.contains("hidden")) {
+    closeModal();
+  }
+
   render();
   
   if (window.innerWidth <= 860) toggleSidebar();
@@ -152,15 +161,16 @@ function save() {
 }
 
 function openModal() {
+  document.getElementById("taskForm").reset();
   document.getElementById("modal").classList.remove("hidden");
-  
-  if (currentAppMode === "routines") {
-    document.getElementById("repeat").value = "daily";
-  } else {
-    document.getElementById("repeat").value = "none";
-    if (currentView === "today") {
-      document.getElementById("date").value = new Date().toLocaleDateString('en-CA');
-    }
+
+  const addingRoutine = currentAppMode === "routines";
+  document.getElementById("repeatFields").style.display = "none";
+  document.getElementById("scheduleFields").style.display = addingRoutine ? "none" : "";
+  document.getElementById("repeat").value = addingRoutine ? "daily" : "none";
+
+  if (!addingRoutine && currentView === "today") {
+    document.getElementById("date").value = new Date().toLocaleDateString('en-CA');
   }
 
   setTimeout(() => document.getElementById("title").focus(), 100);
@@ -178,25 +188,22 @@ function toggleSidebar() {
 document.getElementById("taskForm").addEventListener("submit", e => {
   e.preventDefault();
 
+  const addingRoutine = currentAppMode === "routines";
+
   tasks.unshift({
     id: Date.now(),
     title: document.getElementById("title").value.trim(),
     category: document.getElementById("category").value,
     priority: document.getElementById("priority").value,
-    repeat: document.getElementById("repeat").value,
-    date: document.getElementById("date").value,
-    time: document.getElementById("time").value,
+    repeat: addingRoutine ? "daily" : "none",
+    date: addingRoutine ? "" : document.getElementById("date").value,
+    time: addingRoutine ? "" : document.getElementById("time").value,
     link: document.getElementById("link").value.trim(),
     notes: document.getElementById("notes").value.trim(),
     completed: false,
     history: [],
     created: new Date().toISOString()
   });
-
-  // Automatically navigate to routines if a daily routine is added
-  if (document.getElementById("repeat").value === "daily") {
-    window.switchMode("routines");
-  }
 
   save();
   closeModal();
@@ -224,9 +231,9 @@ function getFilteredTasks() {
   return tasks.filter(t => {
     // Filter by view
     if (currentAppMode === "routines") {
-      if (t.repeat !== "daily") return false;
+      if (!isDaily(t)) return false;
     } else {
-      if (t.repeat === "daily") return false;
+      if (isDaily(t)) return false;
       if (currentCategory && t.category !== currentCategory) return false;
 
       if (currentView === "today" && (!isToday(t.date) || t.completed)) return false;
@@ -266,12 +273,12 @@ window.toggleTask = function (id) {
 
   if (!task.completed) {
     task.completed = true;
-    if (task.repeat === 'daily') {
+    if (isDaily(task)) {
       if (!task.history.includes(dStr)) task.history.push(dStr);
     }
   } else {
     task.completed = false;
-    if (task.repeat === 'daily') {
+    if (isDaily(task)) {
       task.history = task.history.filter(d => d !== dStr);
     }
   }
@@ -319,17 +326,19 @@ function generateTaskHeatmap(task) {
 }
 
 function createTaskHTML(t) {
+  const daily = isDaily(t);
+  const priority = String(t.priority || "Medium");
   return `
-    <article class="task ${t.completed ? "done" : ""}" data-id="${t.id}" ${t.repeat === 'daily' ? 'style="flex-direction: column;"' : ''}>
+    <article class="task ${t.completed ? "done" : ""}" data-id="${t.id}" ${daily ? 'style="flex-direction: column;"' : ''}>
       <div style="display: flex; gap: 16px; width: 100%;">
         <button class="check" onclick="toggleTask(${t.id})" aria-label="Complete task"></button>
         <div class="task-content">
           <div class="task-title">${icons[t.category] || "📌"} ${escapeHTML(t.title)}</div>
           <div class="meta">
             <span class="badge">${escapeHTML(t.category)}</span>
-            <span class="badge priority-${t.priority.toLowerCase()}">${escapeHTML(t.priority)}</span>
-            ${t.repeat === 'daily' ? '<span class="badge" style="background:var(--accent-light);color:var(--accent)">🔁 Daily</span>' : ''}
-            <span class="task-date">📅 ${formatDate(t.date, t.time)}</span>
+            <span class="badge priority-${priority.toLowerCase()}">${escapeHTML(priority)}</span>
+            ${daily ? '<span class="badge" style="background:var(--accent-light);color:var(--accent)">🔁 Daily</span>' : ''}
+            ${daily ? '' : `<span class="task-date">📅 ${formatDate(t.date, t.time)}</span>`}
           </div>
           ${t.notes ? `<div class="task-notes">${escapeHTML(t.notes)}</div>` : ""}
           ${t.link ? `<a class="task-link" href="${escapeHTML(t.link)}" target="_blank" rel="noopener">Open link ↗</a>` : ""}
@@ -338,7 +347,7 @@ function createTaskHTML(t) {
           <button class="icon-btn" onclick="deleteTask(${t.id})" title="Delete">🗑</button>
         </div>
       </div>
-      ${t.repeat === 'daily' ? generateTaskHeatmap(t) : ""}
+      ${daily ? generateTaskHeatmap(t) : ""}
     </article>
   `;
 }
@@ -363,7 +372,7 @@ function render() {
     document.getElementById("mainStats").style.display = "";
   }
 
-  const normalTasks = tasks.filter(t => t.repeat !== 'daily');
+  const normalTasks = tasks.filter(t => !isDaily(t));
 
   const openNormal = normalTasks.filter(t => !t.completed);
   document.getElementById("statOpen").textContent = openNormal.length;
@@ -402,9 +411,12 @@ function render() {
     sortableInstance = new Sortable(list, {
       animation: 150,
       ghostClass: 'sortable-ghost',
-      onEnd: function (evt) {
-        const newOrderIds = Array.from(document.querySelectorAll('.task')).map(el => parseInt(el.dataset.id));
-        tasks = newOrderIds.map(id => tasks.find(t => t.id === id)).filter(Boolean);
+      onEnd: function () {
+        const visibleIds = Array.from(list.querySelectorAll(".task")).map(el => parseInt(el.dataset.id, 10));
+        const visibleSet = new Set(visibleIds);
+        const reorderedVisible = visibleIds.map(id => tasks.find(t => t.id === id)).filter(Boolean);
+        let i = 0;
+        tasks = tasks.map(t => visibleSet.has(t.id) ? reorderedVisible[i++] : t).filter(Boolean);
         save();
       }
     });
